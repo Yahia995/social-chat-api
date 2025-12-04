@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Chat WebSocket Test</title>
+
+    <!-- SockJS -->
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <!-- STOMP -->
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+
+    <style>
+        body { font-family: Arial; padding: 20px; }
+        #log { border: 1px solid #ccc; padding: 10px; height: 300px; overflow-y: scroll; white-space: pre-line; }
+    </style>
+</head>
+<body>
+
+<h2>WebSocket Chat Tester</h2>
+
+JWT Token: <input id="jwt" style="width: 400px"><br><br>
+Conversation ID: <input id="cid" value="123"><br><br>
+
+<button onclick="connect()">Connect</button>
+<button onclick="disconnect()">Disconnect</button>
+
+<h3>Logs</h3>
+<div id="log"></div>
+
+<h3>Send Message</h3>
+<input id="message" style="width:300px" placeholder="Message...">
+<button onclick="sendMessage()">Send</button>
+
+<h3>Typing</h3>
+<button onclick="sendTyping()">Send Typing</button>
+
+<script>
+    let stompClient = null;
+
+    function log(msg) {
+        const box = document.getElementById("log");
+        box.textContent += msg + "\n";
+        box.scrollTop = box.scrollHeight;
+    }
+
+    function connect() {
+        const jwt = document.getElementById("jwt").value;
+
+        const socket = new SockJS("http://localhost:8080/ws");
+
+        stompClient = Stomp.over(socket);
+
+        stompClient.connect(
+            { Authorization: "Bearer " + jwt },       // <-- JWT sent here
+            frame => {
+                log("Connected: " + frame);
+
+                const cid = document.getElementById("cid").value;
+
+                // Subscriptions
+                stompClient.subscribe(`/topic/conversations/${cid}/messages`, msg => {
+                    log("[MESSAGE] " + msg.body);
+                });
+
+                stompClient.subscribe(`/topic/conversations/${cid}/typing`, msg => {
+                    log("[TYPING] " + msg.body);
+                });
+
+                stompClient.subscribe(`/topic/presence`, msg => {
+                    log("[PRESENCE] " + msg.body);
+                });
+
+                stompClient.subscribe(`/user/queue/notifications`, msg => {
+                    log("[NOTIFICATION] " + msg.body);
+                });
+            },
+            error => log("Connection error: " + error)
+        );
+    }
+
+    function sendMessage() {
+        const cid = document.getElementById("cid").value;
+        const text = document.getElementById("message").value;
+
+        stompClient.send(`/app/chat/${cid}/message`, {}, JSON.stringify({
+            content: text,
+            timestamp: new Date().toISOString()
+        }));
+
+        log("Sent message: " + text);
+    }
+
+    function sendTyping() {
+        const cid = document.getElementById("cid").value;
+
+        stompClient.send(`/app/chat/${cid}/typing`, {}, JSON.stringify({
+            typing: true,
+            timestamp: new Date().toISOString()
+        }));
+
+        log("Sent typing indicator");
+    }
+
+    function disconnect() {
+        if (stompClient) {
+            stompClient.disconnect(() => log("Disconnected"));
+        }
+    }
+</script>
+
+</body>
+</html>
