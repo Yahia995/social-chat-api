@@ -12,6 +12,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Repository
 public interface FriendRequestRepository extends JpaRepository<FriendRequest, Long> {
@@ -46,12 +47,21 @@ public interface FriendRequestRepository extends JpaRepository<FriendRequest, Lo
     Page<FriendRequest> findPendingRequestsSentPaged(@Param("user") User user, Pageable pageable);
 
     @Query("SELECT CASE WHEN COUNT(fr) > 0 THEN true ELSE false END FROM FriendRequest fr " +
-           "WHERE ((fr.sender = :user1 AND fr.receiver = :user2) OR (fr.sender = :user2 AND fr.receiver = :user1)) " +
-           "AND fr.status = 'BLOCKED'")
+            "WHERE ((fr.sender = :user1 AND fr.receiver = :user2) OR (fr.sender = :user2 AND fr.receiver = :user1)) " +
+            "AND fr.status = 'BLOCKED'")
     boolean isBlocked(@Param("user1") User user1, @Param("user2") User user2);
 
     @Query("SELECT fr FROM FriendRequest fr WHERE fr.sender = :blocker AND fr.receiver = :blocked AND fr.status = 'BLOCKED'")
     Optional<FriendRequest> findBlockBetweenUsers(@Param("blocker") User blocker, @Param("blocked") User blocked);
 
     boolean existsBySenderAndReceiverAndStatus(User sender, User receiver, FriendRequestStatus status);
+
+    @Query("SELECT CASE WHEN fr.sender.id = :userId THEN fr.receiver.id ELSE fr.sender.id END " +
+            "FROM FriendRequest fr WHERE (fr.sender.id = :userId OR fr.receiver.id = :userId) AND fr.status = 'ACCEPTED'")
+    Set<Long> findFriendIdsByUserId(@Param("userId") Long userId);
+
+    @Query("SELECT CASE WHEN COUNT(fr) > 0 THEN true ELSE false END FROM FriendRequest fr " +
+            "WHERE ((fr.sender.id = :userId1 AND fr.receiver.id = :userId2) OR (fr.sender.id = :userId2 AND fr.receiver.id = :userId1)) " +
+            "AND fr.status = 'ACCEPTED'")
+    boolean areFriends(@Param("userId1") Long userId1, @Param("userId2") Long userId2);
 }

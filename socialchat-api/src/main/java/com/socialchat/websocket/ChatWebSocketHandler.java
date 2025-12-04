@@ -17,7 +17,6 @@ import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.stereotype.Controller;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.socket.messaging.SessionConnectedEvent;
 import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 
@@ -25,7 +24,6 @@ import java.security.Principal;
 
 @Slf4j
 @Controller
-@RequestMapping("app/")
 @RequiredArgsConstructor
 public class ChatWebSocketHandler {
 
@@ -37,8 +35,8 @@ public class ChatWebSocketHandler {
     public void handleWebSocketConnect(SessionConnectedEvent event) {
         StompHeaderAccessor accessor = StompHeaderAccessor.wrap(event.getMessage());
         Principal user = accessor.getUser();
-        if (user != null) {
-            presenceService.userConnected(user.getName());
+        if (user instanceof JwtAuthenticationToken jwtAuth) {
+            presenceService.userConnected(jwtAuth.getUserId(), jwtAuth.getUsername());
         }
     }
 
@@ -46,8 +44,8 @@ public class ChatWebSocketHandler {
     public void handleWebSocketDisconnect(SessionDisconnectEvent event) {
         StompHeaderAccessor accessor = StompHeaderAccessor.wrap(event.getMessage());
         Principal user = accessor.getUser();
-        if (user != null) {
-            presenceService.userDisconnected(user.getName());
+        if (user instanceof JwtAuthenticationToken jwtAuth) {
+            presenceService.userDisconnected(jwtAuth.getUserId(), jwtAuth.getUsername());
         }
     }
 
@@ -57,20 +55,32 @@ public class ChatWebSocketHandler {
             @Payload ChatMessageEvent messageEvent,
             SimpMessageHeaderAccessor headerAccessor) {
 
-        Principal principal = headerAccessor.getUser();
-        if (principal == null) return;
-
-        // Extract userId from JwtAuthenticationToken
-        Long userId = null;
-        if (principal instanceof JwtAuthenticationToken jwtToken) {
-            userId = jwtToken.getUserId();
+        JwtAuthenticationToken auth = getJwtAuthentication(headerAccessor);
+        if (auth == null) {
+            log.warn("Received message without authentication");
+            return;
         }
 
-        log.debug("WebSocket message received from {} in conversation {}", principal.getName(), conversationId);
+        Long userId = auth.getUserId();
+        String username = auth.getUsername();
+
+        log.debug("WebSocket message received from {} in conversation {}", username, conversationId);
+
+        String content = messageEvent.getContent();
+        if (content == null || content.trim().isEmpty()) {
+            log.warn("Empty message received from user {}", username);
+            return;
+        }
+
+        if (content.length() > 5000) {
+            log.warn("Message too long from user {}: {} chars", username, content.length());
+            return;
+        }
 
         // Persist message via ChatService (which also broadcasts via WebSocket)
+        // Note: Authorization already checked in WebSocketSecurityConfig interceptor
         MessageRequest request = new MessageRequest();
-        request.setContent(messageEvent.getContent());
+        request.setContent(content.trim());
 
         try {
             chatService.sendMessageFromWebSocket(conversationId, userId, request);
@@ -85,20 +95,14 @@ public class ChatWebSocketHandler {
             @Payload TypingEvent event,
             SimpMessageHeaderAccessor headerAccessor) {
 
-        Principal principal = headerAccessor.getUser();
-        if (principal == null) return;
+        JwtAuthenticationToken auth = getJwtAuthentication(headerAccessor);
+        if (auth == null) return;
 
-        // Extract userId from JwtAuthenticationToken
-        Long userId = null;
-        if (principal instanceof JwtAuthenticationToken jwtToken) {
-            userId = jwtToken.getUserId();
-        }
-
-        // Use WebSocketService to broadcast typing indicator
+        // Note: Authorization already checked in WebSocketSecurityConfig interceptor
         webSocketService.sendTypingIndicator(
                 conversationId,
-                userId,
-                principal.getName(),
+                auth.getUserId(),
+                auth.getUsername(),
                 event.isTyping()
         );
     }
@@ -109,22 +113,25 @@ public class ChatWebSocketHandler {
             @Payload ReadReceiptEvent event,
             SimpMessageHeaderAccessor headerAccessor) {
 
-        Principal principal = headerAccessor.getUser();
-        if (principal == null) return;
+        JwtAuthenticationToken auth = getJwtAuthentication(headerAccessor);
+        if (auth == null) return;
 
-        // Extract userId from JwtAuthenticationToken
-        Long userId = null;
-        if (principal instanceof JwtAuthenticationToken jwtToken) {
-            userId = jwtToken.getUserId();
-        }
-
+        Long userId = auth.getUserId();
         if (userId != null) {
-            // Mark as read in database and broadcast
+            // Note: Authorization already checked in WebSocketSecurityConfig interceptor
             try {
                 chatService.markConversationAsReadFromWebSocket(conversationId, userId);
             } catch (Exception e) {
                 log.error("Error marking conversation as read: {}", e.getMessage());
             }
         }
+    }
+
+    private JwtAuthenticationToken getJwtAuthentication(SimpMessageHeaderAccessor headerAccessor) {
+        Principal principal = headerAccessor.getUser();
+        if (principal instanceof JwtAuthenticationToken jwtAuth) {
+            return jwtAuth;
+        }
+        return null;
     }
 }

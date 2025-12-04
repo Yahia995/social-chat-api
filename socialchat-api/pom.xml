@@ -22,7 +22,7 @@
         <mapstruct.version>1.5.5.Final</mapstruct.version>
         <jjwt.version>0.12.5</jjwt.version>
         <springdoc.version>2.5.0</springdoc.version>
-        <lombok.version>1.18.34</lombok.version> <!-- Added lombok version for annotationProcessorPaths -->
+        <lombok.version>1.18.34</lombok.version>
     </properties>
 
     <dependencies>

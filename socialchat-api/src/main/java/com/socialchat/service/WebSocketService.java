@@ -58,6 +58,7 @@ public class WebSocketService {
 
     // ==================== PRESENCE ====================
 
+    @Deprecated
     public void sendPresenceUpdate(Long userId, String username, boolean online) {
         PresenceEvent event = PresenceEvent.builder()
                 .userId(userId)
@@ -67,7 +68,19 @@ public class WebSocketService {
                 .build();
 
         messagingTemplate.convertAndSend("/topic/presence", event);
-        log.debug("Presence update sent for user {}: {}", username, online ? "online" : "offline");
+        log.debug("Presence update broadcast for user {}: {}", username, online ? "online" : "offline");
+    }
+
+    public void sendPresenceUpdateToUser(String targetUsername, Long userId, String username, boolean online) {
+        PresenceEvent event = PresenceEvent.builder()
+                .userId(userId)
+                .username(username)
+                .online(online)
+                .timestamp(LocalDateTime.now())
+                .build();
+
+        messagingTemplate.convertAndSendToUser(targetUsername, "/queue/presence", event);
+        log.debug("Presence update sent to {} for user {}: {}", targetUsername, username, online ? "online" : "offline");
     }
 
     // ==================== NOTIFICATIONS ====================

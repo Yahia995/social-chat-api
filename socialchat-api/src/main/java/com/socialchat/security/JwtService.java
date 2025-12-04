@@ -84,6 +84,7 @@ public class JwtService {
 
     private String buildToken(Map<String, Object> claims, String username, long expiration) {
         return Jwts.builder()
+                .setHeaderParam("typ", "JWT")
                 .id(UUID.randomUUID().toString())
                 .claims(claims)
                 .subject(username)
