@@ -49,6 +49,7 @@ public class WebSocketAuthorizationService {
     /**
      * Check and update rate limit for a user in a conversation.
      * Returns true if within limit, false if exceeded.
+     * FIXED: Thread-safe implementation with proper atomic operations
      */
     public boolean checkRateLimit(Long userId, Long conversationId) {
         if (userId == null || conversationId == null) {
@@ -58,21 +59,23 @@ public class WebSocketAuthorizationService {
         String key = userId + ":" + conversationId;
         Instant now = Instant.now();
 
+        // FIXED: Use computeIfAbsent/compute pattern for thread safety
         RateLimitEntry entry = rateLimitCache.compute(key, (k, existing) -> {
             if (existing == null || existing.isExpired(now, WINDOW_DURATION_SECONDS)) {
                 // Start new window
-                return new RateLimitEntry(now, new AtomicInteger(1));
+                return new RateLimitEntry(now, new AtomicInteger(0));
             }
-            // Increment counter in existing window
-            existing.getCount().incrementAndGet();
+            // Return existing entry - will increment outside compute
             return existing;
         });
 
-        boolean allowed = entry.getCount().get() <= MAX_MESSAGES_PER_WINDOW;
+        // FIXED: Increment and check atomically
+        int currentCount = entry.getCount().incrementAndGet();
+        boolean allowed = currentCount <= MAX_MESSAGES_PER_WINDOW;
 
         if (!allowed) {
             log.debug("Rate limit reached for user {} in conversation {}: {} messages in window",
-                    userId, conversationId, entry.getCount().get());
+                    userId, conversationId, currentCount);
         }
 
         return allowed;
@@ -83,15 +86,32 @@ public class WebSocketAuthorizationService {
      */
     public void clearRateLimitCache() {
         rateLimitCache.clear();
+        log.info("Rate limit cache cleared");
     }
 
     /**
      * Get current message count for a user in a conversation.
      */
     public int getCurrentMessageCount(Long userId, Long conversationId) {
+        if (userId == null || conversationId == null) {
+            return 0;
+        }
+
         String key = userId + ":" + conversationId;
         RateLimitEntry entry = rateLimitCache.get(key);
         return entry != null ? entry.getCount().get() : 0;
+    }
+
+    /**
+     * Remove expired entries from cache periodically
+     * ADDED: Cleanup method to prevent memory leak
+     */
+    public void cleanupExpiredEntries() {
+        Instant now = Instant.now();
+        rateLimitCache.entrySet().removeIf(entry ->
+                entry.getValue().isExpired(now, WINDOW_DURATION_SECONDS)
+        );
+        log.debug("Cleaned up expired rate limit entries");
     }
 
     private static class RateLimitEntry {

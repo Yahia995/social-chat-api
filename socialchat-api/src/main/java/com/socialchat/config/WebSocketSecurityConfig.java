@@ -32,8 +32,9 @@ public class WebSocketSecurityConfig implements WebSocketMessageBrokerConfigurer
 
     private static final String BEARER_PREFIX = "Bearer ";
 
-    private static final Pattern CONVERSATION_TOPIC_PATTERN = Pattern.compile("/topic/conversation/(\\d+).*");
-    private static final Pattern CONVERSATION_APP_PATTERN = Pattern.compile("/app/chat/(\\d+).*");
+    // FIXED: Corrected pattern to match actual subscription paths
+    private static final Pattern CONVERSATION_TOPIC_PATTERN = Pattern.compile("/topic/conversations/(\\d+)(?:/messages|/typing|/read-receipts)?");
+    private static final Pattern CONVERSATION_APP_PATTERN = Pattern.compile("/app/chat/(\\d+)(?:/message|/typing|/read)?");
     private static final Pattern USER_QUEUE_PATTERN = Pattern.compile("/user/queue/.*");
 
     private final JwtService jwtService;
@@ -117,22 +118,24 @@ public class WebSocketSecurityConfig implements WebSocketMessageBrokerConfigurer
 
         log.debug("SUBSCRIBE request from {} to {}", auth.getUsername(), destination);
 
-        // Allow user-specific queues (notifications, etc.)
+        // Allow user-specific queues (notifications, presence, etc.)
         if (USER_QUEUE_PATTERN.matcher(destination).matches()) {
             return message;
         }
 
-        if (destination.startsWith("/topic/presence")) {
-            log.warn("User {} attempted to subscribe to public presence topic - denied, use /user/queue/presence",
-                    auth.getUsername());
+        // FIXED: Block public presence topic subscription
+        if (destination.equals("/topic/presence")) {
+            log.warn("User {} attempted to subscribe to public presence topic - denied", auth.getUsername());
             throw new IllegalArgumentException("Public presence topic not allowed. Subscribe to /user/queue/presence for friends-only presence.");
         }
 
-        // Allow public notifications topic
+        // Allow public notifications topic (deprecated, but keeping for backwards compatibility)
         if (destination.startsWith("/topic/notifications")) {
+            log.warn("User {} subscribed to deprecated public notifications topic", auth.getUsername());
             return message;
         }
 
+        // Validate conversation membership for conversation-specific topics
         Matcher matcher = CONVERSATION_TOPIC_PATTERN.matcher(destination);
         if (matcher.matches()) {
             Long conversationId = Long.parseLong(matcher.group(1));

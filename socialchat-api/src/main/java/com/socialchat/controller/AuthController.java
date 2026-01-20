@@ -49,8 +49,11 @@ public class AuthController {
             @RequestBody(required = false) LogoutRequest request) {
         String authHeader = httpRequest.getHeader("Authorization");
         String accessToken = null;
-        if (/*authHeader != null &&*/ authHeader.startsWith("Bearer "))
+
+        // FIXED: Proper null check
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
             accessToken = authHeader.substring(7);
+        }
 
         String refreshToken = request != null ? request.getRefreshToken() : null;
         authService.logout(accessToken, refreshToken);
@@ -64,8 +67,11 @@ public class AuthController {
             @Valid @RequestBody ChangePasswordRequest request) {
         String authHeader = httpRequest.getHeader("Authorization");
         String accessToken = null;
-        if (/*authHeader != null &&*/ authHeader.startsWith("Bearer "))
+
+        // FIXED: Proper null check
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
             accessToken = authHeader.substring(7);
+        }
 
         authService.changePassword(request, accessToken);
         return ResponseEntity.ok(ApiResponse.success(null, "Password changed successfully"));

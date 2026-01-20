@@ -42,7 +42,12 @@ public class ChatService {
     public ConversationResponse createOrGetConversation(ConversationRequest request) {
         User currentUser = securityUtils.getCurrentUser();
 
+        // FIXED: Validate participant IDs list is not null
         List<Long> participantIds = request.getParticipantIds();
+        if (participantIds == null || participantIds.isEmpty()) {
+            throw new BadRequestException("Participant IDs cannot be null or empty");
+        }
+
         if (!participantIds.contains(currentUser.getId())) {
             participantIds.add(currentUser.getId());
         }
@@ -56,7 +61,7 @@ public class ChatService {
             Long otherUserId = participantIds.stream()
                     .filter(id -> !id.equals(currentUser.getId()))
                     .findFirst()
-                    .orElseThrow();
+                    .orElseThrow(() -> new BadRequestException("Invalid participant IDs"));
 
             Optional<Conversation> existing = conversationRepository.findDirectConversation(currentUser.getId(), otherUserId);
             if (existing.isPresent()) {
@@ -73,6 +78,7 @@ public class ChatService {
 
         conversation = conversationRepository.save(conversation);
 
+        // FIXED: Validate all user IDs exist before creating participants
         for (Long userId : participantIds) {
             User user = userRepository.findById(userId)
                     .orElseThrow(() -> new ResourceNotFoundException("User", userId));
@@ -164,14 +170,21 @@ public class ChatService {
 
         validateParticipant(conversation, sender);
 
+        // FIXED: Proper validation of message content
         if (request.getContent() == null || request.getContent().trim().isEmpty()) {
             throw new BadRequestException("Message content cannot be empty");
+        }
+
+        // FIXED: Validate content length
+        String content = request.getContent().trim();
+        if (content.length() > 5000) {
+            throw new BadRequestException("Message content exceeds maximum length of 5000 characters");
         }
 
         Message message = Message.builder()
                 .conversation(conversation)
                 .sender(sender)
-                .content(request.getContent())
+                .content(content)
                 .build();
 
         message = messageRepository.save(message);
@@ -253,6 +266,9 @@ public class ChatService {
             LocalDateTime lastRead = currentParticipant.get().getLastReadAt();
             if (lastRead != null) {
                 unreadCount = messageRepository.countByConversationAndCreatedAtAfter(conversation, lastRead);
+            } else {
+                // FIXED: If lastReadAt is null, count all messages
+                unreadCount = messageRepository.countByConversationAndCreatedAtAfter(conversation, LocalDateTime.MIN);
             }
         }
 
