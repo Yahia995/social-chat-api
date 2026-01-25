@@ -1660,7 +1660,6 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 
 - **Documentation**: [API Docs](http://localhost:8080/swagger-ui.html)
 - **Issues**: [GitHub Issues](https://github.com/Yahia995/social-chat-api/issues)
-- **Email**: support@socialchat.com
 
 ---
 
